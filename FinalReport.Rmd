@@ -1,0 +1,701 @@
+---
+title: "The Effect of Antibiotic Treatment on the Expression of Antibiotic Resistance Genes in the Intestinal Microbiome"
+author: "Tucker Cullen"
+date: "4/16/2020"
+output: html_document
+---
+
+## Abstract 
+
+The increasing occurrence of antibiotic resistant bacteria has become a key concern in modern medicine. The human gut microbiome, which plays a key role in maintaining proper digestive function, is at the front lines of this issue, as it is the first place in the body to encounter oral antibiotics after they are administered. In this study, I examined the effects of two common antibiotics, cotrimoxazole and ciprofloxacin, on the expression of antibiotic resistance genes (ARGs) in gut microbiota. Two cohorts of hematologic patients were chosen to receive a prophylactic course of one of the two drugs, and stool samples were acquired from each patient before and after treatment to extract genetic information from their gut microbiomes. While I expected antibiotic treatment to increase the abundance of antibiotic resistance genes, the data shows that this was generally not the case. Contrimoxazole treatment did not have any significant effect on any ARG class, while ciprofloxacin treatment caused a *decrease* in abundance of ARGs of the nitroimidazole and glycopeptide ARG classes (p = 0.003 and 0.0002 respectively).
+
+
+## Introduction
+
+The term microbiome refers to a collection of microorganisms (such as bacteria, fungi, etc.) that inhabit a particular environment and perform certain essential functions in the human and animal bodies. Most microbiota in humans reside in the intestines and colon, parts of the digestive system. An essential function of this “gut microbiome” is the consumption and degradation of food.^1^
+
+Antibiotics are frequently used in modern medicine in order to help the body recover from or prevent bacterial infections. There is a significant concern that overuse of such drugs is allowing the very microbes they target to become resistant.$^2$ There is an ever growing list of infections such as pneumonia, tuberculosis, and foodborne diseases that are becoming harder to treat as resistance grows and antibiotics become less effective.^3^ If this trend continues, it is possible that common infections and minor injuries will once again be able to kill as they did in the pre-antibiotic era. 
+
+Antibiotics are technically consumed and absorbed by the microbiome the same way as food, meaning that the gut microbiome is on the front lines of this issue. Due to its complex nature, the human gut microbiome contains a wide variety of bacterial and human genetic information. Certain genes called antibiotic resistance genes (ARGs) have been identified to be commonly expressed in bacteria that have developed antibiotic resistance. The complete collection of all ARGs is referred to as the “resistome” (an expression coined by Gerald D. Wright).^4^ I intend to analyze the effect of antibiotics on the expression levels of different antibiotic resistance genes in the gut microbiome, using the resistome as a reference library for sequence alignment. This could provide insight into the role the microbiome plays in antibiotic resistance, and what drugs are better suited to preventing resistance compared to others.  
+  
+
+## Microbiome Sample Collection
+
+In order to explore this question, I have selected a dataset that contains the microbiome genetic information of 41 patients who underwent antibiotic treatment.^5^ Two cohorts of patients were chosen for the study: a group of 20 patients at a hospital in Tübingen and a group of 21 patients at a hospital in Cologne, Germany. All the patients suffered from various hematological disorders, which refers to disorders that affect blood cells or proteins involved in blood clotting or the immune system.^6^ Since these patients are more prone to infection, they were given a roughly 7-day course of oral prophylactic antibiotics. The prophylactic, or preventative, nature of the antibiotics is important to note, since it means the patients did not actually have a bacterial infection that could skew the microbiome sequencing results. 
+
+Two different antibiotics were used for this study. The cohort in Tübingen was given ciprofloxacin, while the Cologne cohort was given cotrimoxazole. Both drugs are among the top ten most commonly used antibiotics, and can treat a wide variety of bacterial infections.^7,8^ Ciprofloxacin belongs to the class of fluoroquinolone antibiotics.^9^ Its main mechanism of action involves the inhibition of DNA gyrase. It has been shown to be effective on most types of Gram-negative bacteria and many types of Gram-positive bacteria, hence its use as a broad spectrum antibiotic. Cotrimoxazole on the other hand is actually a combination of two different substances: sulfamethoxazole and trimethoprim. The sulfamethoxazole component inhibits the formation of dihydrofolic acid, whereas trimethoprim inhibits dihydrofolate reductase.^10^ Combining these two substances allows cotrimoxazole to block folic acid synthesis, thereby preventing bacterial cells from synthesizing essential nucleic acids. Studies also suggest that combining these two agents into one drug delays the emergence of antibiotic resistance, which makes cotrimoxazole particularly interesting for this analysis.^11^
+
+In order to obtain genetic information from these patients, stool samples were collected from each patient throughout the antibiotic treatment. Four stool samples were collected in total: at three days before antibiotic prophylaxis (T0), one day after the start of prophylaxis (T1), three days in (T2), and at the end of the trial (T3). DNA was extracted from these samples using Qiagen’s PowerSoil DNA Isolation Kit. This device employs Inhibitor Removal Technology that eliminates humic acid content from substances like compost, sediment, or manure.^12^ Highly pure DNA is left behind that can be used for downstream analysis. 
+
+Paired-end shotgun metagenomic sequencing was then carried out on the isolated DNA. This is a relatively new technique in which all genomic DNA is sequenced from a complex environmental sample.^13^ This not only allows for taxonomy profiling as with 16S rRNA sequencing, but it also allows you to conduct other genomic analyses (such as looking at the “resistome” as I propose to do in this study).$^{14}$ The median sequence depth for the shotgun metagenomic sequencing was 83,345,082 raw sequence reads per sample and 82,616,415 sequence reads per sample after filtration.^5^ A NEB-Next Ultra DNA Library kit was used for DNA library preparation, and an Illumina HiSep platform was used for sequencing. Trimmomatic (version 0.35) was used to trim adapters and remove short reads and reads with low Phred scores.^15^ To confirm that the remaining reads were high quality, quality control was conducted using FastQC (version 0.35).^16^ Human genomic data was then removed from the samples by mapping reads against the human genome (GRCh38, release 13, NCBI accession PRJNA31257) using the KneadData software.^17^ This ensured that the remaining reads contained genomic data only from gut microbes and not host cells. After these preprocessing steps, the fastq files containing the paired reads were made available for download from the European Nucleotide Archive (ENA) and the Sequence Read Archive (SRA, study accession number PRJEB28085), which is where I accessed the samples.^18^ 
+
+
+## Data Processing 
+
+### *Fetching the Data*
+
+In order to access the microbiome data, I utilized the SRA toolkit (version 2.9.1) to transfer the .sra files from the sequence read archive to UVA’s high performance computational cluster (a.k.a Rivanna).^19,20^ The “prefetch” command was used to download the .sra files, and the “fastqdump” command was used to split the .sra files into .fastq files. The accession numbers for each set of paired-end samples ranged from ERR272270 (patient 1, T0) to ERR2722869 (patient 41, T3). A slurm script was used to cycle through these accession numbers and acquire the appropriate files. The code for this script can be seen below.
+
+
+```{bash eval=FALSE}
+
+#!/bin/bash                                                                                                 
+#SBATCH --ntasks=1
+#SBATCH --partition=standard
+#SBATCH --time=48:00:00
+#SBATCH --account=bme4550
+#SBATCH --mem=120000
+#SBATCH --cpus-per-task=16
+#SBATCH --output=resultsSraGet.out
+#SBATCH --error=errorSraGet.out
+
+#cd to the directory where the fastq files should be stored
+cd /scratch/$USER/final_files/fastq
+
+#load the toolkit
+module load sratoolkit
+
+#iterate through each patient
+for i in {706..869..4}
+  do
+     # j provides the accession number for t3
+     let j=$i+3
+     
+     # get t0
+     fastq-dump --split-files ERR2722$i
+     rm /home/$USER/ncbi/public/sra/ERR2722$i.sra #prevents home dir from filling up
+     
+     #get t3
+     fastq-dump --split-files ERR2722$j
+     rm /home/$USER/ncbi/public/sra/ERR2722$j.sra
+  done
+
+```
+
+
+Since I are primarily interested in the resistome composition before and after antibiotic treatment, I decided to leave out the intermediary samples from the analysis (T1 and T2). Due to the sheer size of metagenomic data, removing these intermediary files allowed me to significantly speed up and simplify the data processing pipeline while still retaining the key information relevant to my experimental question. 
+
+### *Setting up the ARG-ANNOT Reference Database*
+
+In order to determine what antibiotic resistance genes are present in the samples, I first needed to set up a reference database that contains the nucleotide sequences for these ARGs. I used the Antibiotic Resistance Gene-ANNOTation (ARG-ANNOT) database for this purpose (version AA, V3 march 2017).^21^  This database was created to detect existing and putative new antibiotic resistance genes in bacterial genomes.^22^ It contains the genetic sequences of 1,689 ARGS (which fall into ten different classes) in FASTA format. The developers of ARG-ANNOT selected these  1,689 ARGs based on a thorough review of literature linking certain genes to antibiotic resistance. Each entry into the ARG-ANNOT database is labeled with the abbreviation for the corresponding ARG class in parentheses, followed by the gene name, accession number, gene location in the sequence, and gene size, respectively (e.g. (AGly)AadA1:M95287:3320–4111:792). 
+
+To download this FASTA file into Rivanna, the “wget” command was used. To then get the database into a format compatible with DIAMOND (the alignment tool I employ, discussed in the next section), the “diamond makedb” command was used. This converted ARG-ANNOT into a binary reference database that can be used for sample alignment. 
+
+
+
+### *Aligning the Samples with DIAMOND*
+
+The bioinformatics tool DIAMOND (double index alignment of next generation sequencing data) was used to align the samples to the ARG-ANNOT database to determine the abundance of ARGs in each sample. DIAMOND is an open source program that takes the place of BLAST (Basic Local Alignment Search Tool) for high-throughput data.$^{23}$ BLAST is used to approximate alignments that optimize the maximal segment pair score, a measure of local similarity. However, BLAST is much too slow for routine use in a high-throughput context. DIAMOND aligns short sequence reads at approximately 20,000 times the speed of BLAST and has a similar level of sensitivity. Like BLAST, DIAMOND is an “all mapper” that attempts to exhaustively determine all significant alignments for a given query.
+
+After loading DIAMOND (version 0.9.13) into Rivanna and setting up the ARG-ANNOT reference database, I aligned each of the sample files using the “blastx” command. For reference, In DIAMOND/BLAST terminology the collected metagenomic samples (fastq files) are referred to as “query” sequences, and the entries in the database (ARG-ANNOT) are referred to as “subject” sequences. Based on metagenomic alignment procedures found in literature, when running blastx I opted to use the “sensitive” mode (finds up to 94% of significant matches vs. 75-90% for regular mode), set the query-cover to 75% (only reports alignments that match at least 75% of the query sequence), and set the max-hsps to 1 (tells DIAMOND to only report the best match for a given query/subject pair).^5,24^ I set DIAMOND to output in BLAST tabular format, with the columns set as: subject ID, subject length, query ID, query length, alignment length, evalue, and bit score (columns 1-7 respectively). The first two columns, subject ID and subject length were of most interest to me since they show what ARGs the samples contain and the length of those ARGs. In the end, 382 different ARGs were detected in the samples (which of course all fall under the 10 ARG classes that  will be described more below). The slurm script used to run DIAMOND on all the files can be seen below. 
+
+
+
+```{bash eval=FALSE}
+
+#!/bin/bash
+#SBATCH --ntasks=1
+#SBATCH --partition=standard
+#SBATCH --time=50:00:00
+#SBATCH --account=bme4550
+#SBATCH --mem=120000
+#SBATCH --cpus-per-task=16
+#SBATCH --output=resultsRunDiamond.out
+#SBATCH --error=errorRunDiamond.out                                                                                                                                                            
+
+#go to dir that conatins the fastq files
+cd /scratch/$USER/final_files/fastq
+
+# where the arg-annot reference database is stored
+REFDIR=/scratch/$USER/final/argannotV3.dmnd
+
+#where the .m8 files will be outputted
+OUTPUTDIR=/scratch/$USER/final_files/m8
+mkdir $OUTPUTDIR
+
+#load the necessary tools into Rivanna
+module load gcc diamond
+
+# loop through each sample 
+for i in {706..869..4}
+  do
+     let j=$i+3
+
+     #run blastx on t0, read 1                                                                                                                                                          
+     diamond blastx \
+         --db $REFDIR \
+         --query ERR2722${i}_1.fastq \
+         --outfmt 6 sseqid slen qseqid qlen length evalue bitscore \
+         --evalue 0.00001 \
+         --sensitive \
+         --query-cover 75 \
+         --max-hsps 1 \
+         --out $OUTPUTDIR/ERR2722${i}_1.m8
+
+     #t0, read 2                                                                                                                                                                        
+     diamond blastx \
+         --db $REFDIR \
+         --query ERR2722${i}_2.fastq \
+         --outfmt 6 sseqid slen seqid qlen length evalue bitscore \
+         --evalue 0.00001 \
+         --sensitive \
+         --query-cover 75 \
+         --max-hsps 1 \
+         --out $OUTPUTDIR/ERR2722${i}_2.m8
+
+     #t3, read 1                                                                                                                                                                        
+     diamond blastx \
+         --db $REFDIR \
+         --query ERR2722${j}_1.fastq \
+         --outfmt 6 sseqid slen qseqid qlen length evalue bitscore \
+         --evalue 0.00001 \
+         --sensitive \
+         --query-cover 75 \
+         --max-hsps 1 \
+         --out $OUTPUTDIR/ERR2722${j}_1.m8
+
+     #t3, read2                                                                                                                                                                         
+     diamond blastx \
+         --db $REFDIR \
+         --query ERR2722${j}_2.fastq \
+         --outfmt 6 sseqid slen qseqid qlen length evalue bitscore \
+         --evalue 0.00001 \
+         --sensitive \
+         --query-cover 75 \
+         --max-hsps 1 \
+         --out $OUTPUTDIR/ERR2722${j}_2.m8
+
+  done
+
+
+```
+
+
+### *Calculating Length Corrected Relative Abundance*
+
+Once DIAMOND alignment was complete I first normalized to a relative abundance, and then normalized for length for each ARG class. For each sample, I first determined the sample read count by counting the entries in the fastq file. Then I counted the number of hits (alignments between the query and subject sequence, i.e. one line of the blastx output file) for each ARG class of interest in the corresponding DIAMOND output file. I divided hits by the sample read count, then multiplied by 10^6^ to get hits-per-million reads (HPM). I then divided HPM by the average length of the ARGs in the class of interest to get length corrected relative abundance (LCRA). This provides me with a normalized measure of the abundance of each ARG class in each sample. The 10 ARG classes I measured are: aminoglycoside ARGs (AGly), beta-lactamases (Bla), fluoroquinolone ARGs (Flq), glycopeptide ARGs (Gly), macrolide-lincosamide-streptogramin ARGs (MLS), nitroimidazole ARGs (Ntmdz), phenicol ARGs (Phe), sulfonamide ARGs (Sul), tetracycline ARGs (Tet), and trimethoprim ARGs (Tmt). These ten ARG classes are all of the classes present in the ARG-ANNOT database I used for sample alignment. 
+
+A shell script was used to conduct these normalization calculations, and the LCRA for each ARG in each sample was outputted in a tab-separated text file that was exported to R Studio for further analysis. Each row in the output file represented a sample, and each column represented a different class of ARGs. The code for the shell script that calculated LCRA can be seen below.
+
+
+
+```{bash eval=FALSE}
+
+#!/bin/bash                                                                                                                                                                             
+
+#Specify input directories 
+FASTQDIR=/scratch/$USER/final_files/fastq
+M8DIR=/scratch/$USER/final_files/m8new
+
+#print out column headers                                                                                                                                                     
+echo -e "Sample\tGly\tAGly\tFlq\tBla\tNtmdz\tMLS\tTet\tPhe\tSul\tTmt"
+
+#loop through all of the samples                                                                                                                                                      
+for i in {706..789..4}
+  do
+
+#Switch between t0 and t3
+for j in 0 3
+  do
+
+((SUFFIX=i+j))
+
+FILENAME=ERR2722$SUFFIX
+
+#calculate the sample read count (entries in the fastq files)
+cd $FASTQDIR
+SRC1=$(grep -c "+" ${FILENAME}_1.fastq)
+((SRC=SRC1*2))
+
+#go to diamond alignment files                                                                                                                                                           
+cd $M8DIR
+
+##################################################
+############ Calculate LCRA for... ###############   
+##################################################
+
+#Gly
+ARG=Gly
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Gly=$(bc <<< "scale=5; ${GlyHPM}/${GlyLen}")
+
+#AGly
+ARG=AGly
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+AGly=$(bc <<< "scale=5; ${AGlyHPM}/${AGlyLen}")
+
+#Flq
+ARG=Flq
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Flq=$(bc <<< "scale=5; ${FlqHPM}/${FlqLen}")
+
+#Bla
+ARG=Bla
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Bla=$(bc <<< "scale=5; ${BlaHPM}/${BlaLen}")
+
+
+#Ntmdz
+ARG=Ntmdz
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Ntmdz=$(bc <<< "scale=5; ${NtmdzHPM}/${NtmdzLen}")
+
+#MLS
+ARG=MLS
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+MLS=$(bc <<< "scale=5; ${MLSHPM}/${MLSLen}")
+
+#Tet
+ARG=Tet
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Tet=$(bc <<< "scale=5; ${TetHPM}/${TetLen}")
+
+#Phe
+ARG=Phe
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Phe=$(bc <<< "scale=5; ${PheHPM}/${PheLen}")
+
+#Sul
+ARG=Sul
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Sul=$(bc <<< "scale=5; ${SulHPM}/${SulLen}")
+
+
+#Tmt
+ARG=Tmt
+((Hits=$(grep -c "($ARG)" ${FILENAME}_1.m8) + $(grep -c "($ARG)" ${FILENAME}_2.m8)))
+((Len= $(grep "($ARG)" ${FILENAME}_1.m8 | awk '{sum+=$2}END{print sum}') + $(grep "($ARG)" ${FILENAME}_2.m8 | awk '{sum+=$2}END{print sum}')))
+((${ARG}Len=Len/Hits))
+((HPM=Hits*1000000))
+((${ARG}HPM=HPM/SRC))
+Tmt=$(bc <<< "scale=5; ${TmtHPM}/${TmtLen}")
+
+#print out the LCRA values of each gene class in tab seperated format 
+echo -e "$FILENAME\t$Gly\t$AGly\t$Flq\t$Bla\t$Ntmdz\t$MLS\t$Tet\t$Phe\t$Sul\t$Tmt"
+
+done
+
+done
+
+```
+
+## Data Analysis 
+
+Once LCRA was computed for each ARG expressed in every patient sample, the data was loaded into R with the following command: 
+
+```{r}
+
+# load in cotrimoxazole data
+cotri <- read.delim("Preprocessed_Data/cotriLCRA.txt", header=TRUE)
+cotri.t0 <- cotri[seq(1, nrow(cotri), 2), ]
+cotri.t3 <- cotri[seq(2, nrow(cotri), 2), ]
+
+# load in the ciprofloxacin data
+cipro <- read.delim("Preprocessed_Data/ciproLCRAv2.txt", header=TRUE)
+cipro.t0 <- cipro[seq(1, nrow(cipro), 2), ]
+cipro.t3 <- cipro[seq(2, nrow(cipro), 2), ]
+
+```
+
+
+### *Checking for a Normal Distribution*
+
+Before examining the significance of the data using statistical tests, quantile-quantile plots (QQ plots) were generated in order to determine if differences between the T0 and T3 LCRA values were approximately normally distributed. The resulting plots came out to be roughly linear, which supports the assumption that the distribution is indeed normal. An example QQ plot (MLS LCRA values for the cotrimoxazole condition) are shown below in figure 1. While QQ plots were graphed for all samples to check for a normal distribution, only this one example was included in this report to aid in readability. 
+
+
+```{r}
+
+## QQ plots for Gly - before and after Cotrimoxazole Treatment
+
+#Take the difference between the 
+diff <- cotri.t3$MLS - cotri.t0$MLS
+
+## Plot for 
+qqt0Glynorm<-qqnorm(diff, pch=1,frame=FALSE, main="MLS - Cotrimoxazole")
+qqt0Glyline<-qqline(diff ,col="red",lwd=2)
+
+
+```
+
+### *Figure 1. An example QQ plot showing that the data is approximately normally distributed*
+
+My observations from the QQ plots allowed me to use two-sample t-tests to determine whether or not ciprofloxacin or cotrimoxazole treatment had a significant effect on the abundance of ARGS in the gut microbiome. Since I was dealing with high dimensional data and conducting multiple t-tests, I then adjusted the p-values by the false discovery rate (FDR). This adjustment allows me to account for potential false positives. My adjusted p-values can be seen in the graphs described below. 
+
+
+```{r}
+
+# Computing two sample t-tests to determine the difference in the mean 
+
+# T-Tests for Contrimoxazole Data
+
+Gly.Cotri.ttest <- t.test(cotri.t0$Gly, cotri.t3$Gly, paired=TRUE)
+AGly.Cotri.ttest <- t.test(cotri.t0$AGly,cotri.t3$AGly, paired=TRUE)
+Flq.Cotri.ttest <- t.test(cotri.t0$Flq, cotri.t3$Flq, paired=TRUE)
+Bla.Cotri.ttest <- t.test(cotri.t0$Bla, cotri.t3$Bla, paired=TRUE)
+Ntmdz.Cotri.ttest <- t.test(cotri.t0$Ntmdz, cotri.t3$Ntmdz, paired=TRUE)
+MLS.Cotri.ttest <- t.test(cotri.t0$MLS, cotri.t3$MLS, paired=TRUE)
+Tet.Cotri.ttest <- t.test(cotri.t0$Tet, cotri.t3$Tet, paired=TRUE)
+Phe.Cotri.ttest<-t.test(cotri.t0$Phe, cotri.t3$Phe, paired=TRUE)
+Sul.Cotri.ttest<-t.test(cotri.t0$Sul, cotri.t3$Sul, paired=TRUE)
+Tmt.Cotri.ttest<-t.test(cotri.t0$Tmt, cotri.t3$Tmt, paired=TRUE)
+
+# putting pvals into a dataframe
+pvals.Cotri = c(c(Gly.Cotri.ttest$p.value, AGly.Cotri.ttest$p.value, Flq.Cotri.ttest$p.value, Bla.Cotri.ttest$p.value, Ntmdz.Cotri.ttest$p.value, MLS.Cotri.ttest$p.value, Tet.Cotri.ttest$p.value, Phe.Cotri.ttest$p.value, Sul.Cotri.ttest$p.value, Tmt.Cotri.ttest$p.value))
+
+#False discovery rate adjustment
+fdr.Cotri <- p.adjust(pvals.Cotri, method="fdr")
+fdr.Cotri = as.data.frame(t(fdr.Cotri))
+colnames(fdr.Cotri) = colnames(cotri[, 2:11])
+
+#T-Tests for Cirpo file to get p-values
+Gly.Cipro.ttest<-t.test(cipro.t0$Gly, cipro.t3$Gly, paired=TRUE)
+AGly.Cipro.ttest<-t.test(cipro.t0$AGly, cipro.t3$AGly, paired=TRUE)
+Flq.Cipro.ttest<-t.test(cipro.t0$Flq, cipro.t3$Flq, paired=TRUE)
+Bla.Cipro.ttest<-t.test(cipro.t0$Bla, cipro.t3$Bla, paired=TRUE)
+Ntmdz.Cipro.ttest<-t.test(cipro.t0$Ntmdz, cipro.t3$Ntmdz, paired=TRUE)
+MLS.Cipro.ttest<-t.test(cipro.t0$MLS, cipro.t3$MLS, paired=TRUE)
+Tet.Cipro.ttest<-t.test(cipro.t0$Tet, cipro.t3$Tet, paired=TRUE)
+Phe.Cipro.ttest<-t.test(cipro.t0$Phe, cipro.t3$Phe, paired=TRUE)
+Sul.Cipro.ttest<-t.test(cipro.t0$Sul, cipro.t3$Sul, paired=TRUE)
+Tmt.Cipro.ttest<-t.test(cipro.t0$Tmt, cipro.t3$Tmt, paired=TRUE)
+
+# putting pvals into a dataframe
+pvals.Cipro = c(c(Gly.Cipro.ttest$p.value, AGly.Cipro.ttest$p.value, Flq.Cipro.ttest$p.value, Bla.Cipro.ttest$p.value, Ntmdz.Cipro.ttest$p.value, MLS.Cipro.ttest$p.value, Tet.Cipro.ttest$p.value, Phe.Cipro.ttest$p.value, Sul.Cipro.ttest$p.value, Tmt.Cipro.ttest$p.value))
+
+#False discovery rate adjustment
+fdr.Cipro <- p.adjust(pvals.Cipro, method="fdr")
+fdr.Cipro = as.data.frame(t(fdr.Cipro))
+colnames(fdr.Cipro) = colnames(cipro[, 2:11])
+
+```
+
+
+### *Plotting LCRA*
+
+The resulting LCRA values computed from the DIAMOND alignment data can be seen in the figures below. A box plot was created for each ARG, with the red data points representing samples taken at T0 (before treatment) and the blue data points representing samples taken at T3 (after treatment). The purple line visually shows the difference in the mean LCRA values between T0 and T3 for each ARG. The P values for each corresponding t-test are shown above each plot.
+
+```{r warning=FALSE, message=FALSE}
+
+#########################################
+######## Cotrimoxazole #################
+########################################
+
+
+library(tidyverse)
+library(ggplot2)
+library (reshape2)
+library(ggpubr)
+
+cotriLCRA <- cotri
+dataset=as_tibble(cotriLCRA)
+
+#make a vector of alternating dates
+labelVector = vector(mode="character", length= nrow(dataset))
+labelVector[seq(1, length(labelVector), 2)] = "t0"
+labelVector[seq(2, length(labelVector), 2)] = "t3"
+
+#make a new dataframe with the alternating dates
+a<-data.frame(day=labelVector,LCRA=dataset[,2:11])
+
+#make a plot for each column
+
+#gly
+plot_gly<-ggplot(a, aes(x=day, y=LCRA.Gly, color=day))+
+  labs(y="LCRA Gly", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none')
+gly<-plot_gly+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Gly, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Agly
+plot_Agly<-ggplot(a, aes(x=day, y=LCRA.AGly, color=day))+
+  labs(y="LCRA AGly", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none')
+Agly<-plot_Agly+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$AGly, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Flq
+plot_Flq<-ggplot(a, aes(x=day, y=LCRA.Flq, color=day))+
+  labs(y="LCRA Flq", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Flq<-plot_Flq+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Flq, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Bla
+plot_Bla<-ggplot(a, aes(x=day, y=LCRA.Bla, color=day))+
+  labs(y="LCRA Bla", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Bla<-plot_Bla+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Bla, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Ntmdz
+plot_Ntmdz<-ggplot(a, aes(x=day, y=LCRA.Ntmdz, color=day))+
+  labs(y="LCRA Ntmdz", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Ntmdz<-plot_Ntmdz+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Ntmdz, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#MLS
+plot_MLS<-ggplot(a, aes(x=day, y=LCRA.MLS, color=day))+
+  labs(y="LCRA MLS", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+MLS<-plot_MLS+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$MLS, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Tet
+plot_Tet<-ggplot(a, aes(x=day, y=LCRA.Tet, color=day))+
+  labs(y="LCRA Tet", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none')
+Tet<-plot_Tet+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Tet, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Phe
+plot_Phe<-ggplot(a, aes(x=day, y=LCRA.Phe, color=day))+
+  labs(y="LCRA Phe", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none')
+Phe<-plot_Phe+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Phe, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Sul
+plot_Sul<-ggplot(a, aes(x=day, y=LCRA.Sul, color=day))+
+  labs(y="LCRA Sul", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Sul<-plot_Sul+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Sul, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Tmt
+plot_Tmt<-ggplot(a, aes(x=day, y=LCRA.Tmt, color=day))+
+  labs(y="LCRA Tmt", x="Trial Day")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Tmt<-plot_Tmt+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cotri$Tmt, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+                                                                                                                                                                                                                                      
+figure<-ggarrange(gly,Agly,Flq,Bla,Ntmdz,MLS,Tet,Phe,Sul,Tmt)
+final<-annotate_figure(figure, top=text_grob("Cotrimoxazole", color="red", face='bold', size=12))
+final
+
+
+```
+
+### *Figure 2. Effects of Cotrimoxazole Treatment*
+
+In all cases, treatment with cotrimoxazole did not have a significant effect on the expression of ARGS in the gut microbiome. Although in many cases a noticeable difference in mean LCRA can be observed, these differences are not statistically significant. 
+
+```{r warning=FALSE, message=FALSE }
+
+#####################################
+######## Ciprofloxacin #############
+####################################
+
+library(tidyverse)
+library(ggplot2)
+library (reshape2)
+library(ggpubr)
+
+ciproLCRA <- cipro
+dataset_cipro=as_tibble(ciproLCRA)
+
+#make a vector of alternating dates(probably something that can be automated but I couldn't figure out how)
+labelVector = vector(mode="character", length= nrow(dataset_cipro))
+labelVector[seq(1, length(labelVector), 2)] = "t0"
+labelVector[seq(2, length(labelVector), 2)] = "t3"
+#make a new dataframe with the alternating dates
+cipro<-data.frame(day=labelVector,LCRA=dataset_cipro[,2:11])
+#make a plot for each column
+
+#gly
+plot_gly<-ggplot(cipro, aes(x=day, y=LCRA.Gly, color=day))+
+  labs(y="LCRA Gly")+
+  geom_boxplot()+theme (legend.position = 'none') 
+gly<-plot_gly+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Gly, 4))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Agly
+plot_Agly<-ggplot(cipro, aes(x=day, y=LCRA.AGly, color=day))+
+  labs(y="LCRA AGly")+
+  geom_boxplot()+theme (legend.position = 'none')
+Agly<-plot_Agly+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$AGly, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Flq
+plot_Flq<-ggplot(cipro, aes(x=day, y=LCRA.Flq, color=day))+
+  labs(y="LCRA Flq")+
+  geom_boxplot()+theme (legend.position = 'none')
+Flq<-plot_Flq+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Flq, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Bla
+plot_Bla<-ggplot(cipro, aes(x=day, y=LCRA.Bla, color=day))+
+  labs(y="LCRA Bla")+
+  geom_boxplot()+theme (legend.position = 'none') 
+Bla<-plot_Bla+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Bla, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Ntmdz
+plot_Ntmdz<-ggplot(cipro, aes(x=day, y=LCRA.Ntmdz, color=day))+
+  labs(y="LCRA Ntmdz")+
+  geom_boxplot()+theme (legend.position = 'none')
+Ntmdz<-plot_Ntmdz+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Ntmdz, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#MLS
+plot_MLS<-ggplot(cipro, aes(x=day, y=LCRA.MLS, color=day))+
+  labs(y="LCRA MLS")+
+  geom_boxplot()+theme (legend.position = 'none')
+MLS<-plot_MLS+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$MLS, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Tet
+plot_Tet<-ggplot(cipro, aes(x=day, y=LCRA.Tet, color=day))+
+  labs(y="LCRA Tet")+
+  geom_boxplot()+theme (legend.position = 'none')
+Tet<-plot_Tet+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Tet, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Phe
+plot_Phe<-ggplot(cipro, aes(x=day, y=LCRA.Phe, color=day))+
+  labs(y="LCRA Phe")+
+  geom_boxplot()+theme (legend.position = 'none')
+Phe<-plot_Phe+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Phe, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Sul
+plot_Sul<-ggplot(cipro, aes(x=day, y=LCRA.Sul, color=day))+
+  labs(y="LCRA Sul")+
+  geom_boxplot()+theme (legend.position = 'none')
+Sul<-plot_Sul+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Sul, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+#Tmt
+plot_Tmt<-ggplot(cipro, aes(x=day, y=LCRA.Tmt, color=day))+
+  labs(y="LCRA Tmt")+
+  geom_boxplot()+theme (legend.position = 'none')
+Tmt<-plot_Tmt+geom_dotplot(binaxis='y', stackdir='center', dotsize=.5)+
+  stat_summary(fun=mean, geom="point", shape=2, size=1, color='black')+
+  stat_summary(fun=mean, geom="line",color='darkviolet', aes(group=2)) + ggtitle(paste("p =", round(fdr.Cipro$Tmt, 3))) + theme(plot.title = element_text(size=8, hjust = 0.5, face="bold"), axis.title=element_text(size = 8), axis.title.x = element_blank())
+
+# arrange all the plots into one matrix of plots 
+figure<-ggarrange(gly,Agly,Flq,Bla,Ntmdz,MLS,Tet,Phe,Sul,Tmt)
+final<-annotate_figure(figure, top=text_grob("Ciprofloxacin", color="red", face='bold', size=12))
+final
+
+
+
+```
+
+
+### *Figure 3. Effects of Ciprofloxacin Treatment*
+
+As in the case with cotrimoxazole treatment, ciprofloxacin did not cause any statistically significant increases in the abundance of any ARGs. However, a statistically significant *decrease* in abundance was observed in the case of nitroimidazole (Ntmdz, p = 0.003) and glycopeptide ARGs (Gly, p = 0.002). 
+
+
+## Discussion 
+
+I initially hypothesized that antibiotic treatment would result in a marked increase in the abundance of ARGs in the gut microbiome. However the data in most cases does not support this hypothesis. Out of the ten ARG classes I analyzed, *no* ARG classes showed a significant increase in abundance after cotrimoxazole or ciprofloxacin treatment. Contrary to expectation, two ARGs showed a significant *decrease* in abundance after ciprofloxacin treatment (nitroimidazole and glycopeptide). This is a particularly unexpected result, and could indicate that certain antibiotics such as ciprofloxacin are less likely to lead to antibiotic resistance then others. One theory for why this decrease could have occured is that ciprofloxacin killed off certain types of microbiome bacteria that most commonly express these ARGs, which would explain why ARG expression decreased from baseline. Performing a taxonomy analysis  on the samples in future studies could potentially identify if this is the case, and if so what specific microbiome bacteria could have led to this effect. Additionally, numerous outliers were observed in the ciprofloxacin cohort (a fifth of the Ntmdz, Flq, and MLS T3 samples were considered outliers). This could indicate errors in obtaining or aligning the ciprofloxacin samples. 
+
+It is also possible that the varying clinical makeup to the two different cohorts could have played a role in these unexpected results. While all patients suffered from hematological conditions, this designation encompasses a range of diseases. The majority of the ciprofloxacin patients suffered from leukemia, while the majority of cotrimoxazole patients suffered from lymphoma. Some studies have shown a link between the microbiome and lymphoma in particular, regardless of antibiotic treatment.^25,26^ Furthermore, more ciprofloxacin patients were also on other medications compared to the cotrimoxazole patients (although none of these drugs were other antibiotics). These other drugs could have had their own effects on ARG expression that I was not able to account for. The exact breakdown of the clinical characteristics are presented in Table 1 in the appendix (which was taken directly from the Willmann et al. study that generated the samples).^5^ Ideally in future studies a more uniform patient cohort could be selected to limit these independent variables.
+
+Additional limitations of this study include the small number of antibiotics that were accounted for. There are numerous kinds of antibiotics actively being prescribed in modern healthcare, so a more comprehensive investigation of antibiotics is needed.^7^  The patients surveyed in this study also all suffered from similar conditions and were receiving antibiotics prophylactically.  It would be beneficial to study patients with more diverse sets of conditions, and investigate changes in ARG expression in patients that are actively being treated for bacterial infections (instead of just those receiving antibiotics as a precaution). It would also be useful to track normal fluctuations in ARG gene expression *without* antibiotic treatment, to see if those normal fluctuations could account for some of the observed changes.  
+
+Furthermore, as mentioned before, I did not include the T1 and T2 samples in my analysis since I presume that they would have not added many new insights and therefore would not be a good use of time and resources. This could of course be an incorrect presumption, and ideally the inclusion of these samples will be possible in future analyses when resources allow. Lastly, as with most studies, the study is limited by the sample size and the length of antibiotic treatment. While 41 patients is sizable and provides enough data to make reasonable observations, hundreds of millions of patients receive antibiotics every year and many are treated for extensive periods of time. This makes it challenging to quantify such a far-reaching issue with only a limited number of patients. 
+
+Much more research will be required before we can develop a clear understanding of the link between antibiotics and microbiota present in the gut. The mechanism behind why ciprofloxacin decreased the abundance of certain ARGs is unclear, and could make a particularly good candidate for future investigation. 
+
+
+## Works Cited 
+
+1.	Shreiner, A. B., Kao, J. Y. & Young, V. B. The gut microbiome in health and in disease. Curr. Opin. Gastroenterol. 31, 69–75 (2015).
+2.	Llor, C. & Bjerrum, L. Antimicrobial resistance: risk associated with antibiotic overuse and initiatives to reduce the problem. Ther. Adv. Drug Saf. 5, 229–241 (2014).
+3.	Antibiotic resistance. https://www.who.int/news-room/fact-sheets/detail/antibiotic-resistance.
+4.	Wright, G. D. The antibiotic resistome: the nexus of chemical and genetic diversity. Nat. Rev. Microbiol. 5, 175–186 (2007).
+5.	Willmann, M. et al. Distinct impact of antibiotics on the gut microbiome and resistome: a longitudinal multicenter cohort study. BMC Biol. 17, 76 (2019).
+6.	Hematology Disorders | The Oncology Institute of Hope and Innovation. https://theoncologyinstitute.com/hematologic-disorders/.
+7.	Antibiotics: List of Common Antibiotics & Types. Drugs.com https://www.drugs.com/article/antibiotics.html.
+8.	Antibiotics in 2019: Everything You Need to Know. Solvhealth.com https://www.solvhealth.com/blog/antibiotics-everything-you-need-to-know.
+9.	Campoli-Richards, D. M. et al. Ciprofloxacin. Drugs 35, 373–447 (1988).
+10.	co-trimoxazole (trimethoprim-sulfamethoxazole). https://www.glowm.com/resources/glowm/cd/pages/drugs/c087.html.
+11.	Howe, R. A. & Spencer, R. C. Cotrimoxazole. Drug Saf. 14, 213–218 (1996).
+12.	DNeasy PowerSoil Kit - QIAGEN Online Shop. https://www.qiagen.com/us/products/discovery-and-translational-research/dna-rna-purification/dna-purification/microbial-dna/dneasy-powersoil-kit/?clear=true#orderinginformation.
+13.	Sharpton, T. J. An introduction to the analysis of shotgun metagenomic data. Front. Plant Sci. 5, (2014).
+14.	16S Sequencing vs Shotgun Metagenomic Sequencing. ZYMO RESEARCH https://www.zymoresearch.com/blogs/blog/16s-sequencing-vs-shotgun-metagenomic-sequencing.
+15.	Bolger, A. M., Lohse, M. & Usadel, B. Trimmomatic: a flexible trimmer for Illumina sequence data. Bioinformatics 30, 2114–2120 (2014).
+16.	Babraham Bioinformatics - FastQC A Quality Control tool for High Throughput Sequence Data. https://www.bioinformatics.babraham.ac.uk/projects/fastqc/.
+17.	biobakery / kneadData / wiki / Home — Bitbucket. https://bitbucket.org/biobakery/kneaddata/wiki/Home.
+18.	European Nucleotide Archive < EMBL-EBI. https://www.ebi.ac.uk/ena.
+19.	UVA Research Computing. https://www.rc.virginia.edu/.
+20.	Staff, S. R. A. S. Using the SRA Toolkit to convert .sra files into other formats. SRA Knowledge Base [Internet] (National Center for Biotechnology Information (US), 2011).
+21.	ARG-ANNOT - IHU Méditerranée Infection. http://backup.mediterranee-infection.com/article.php?laref=282&titre=arg-annot.
+22.	Gupta, S. K. et al. ARG-ANNOT, a new bioinformatic tool to discover antibiotic resistance genes in bacterial genomes. Antimicrob. Agents Chemother. 58, 212–220 (2014).
+23.	Buchfink, B., Xie, C. & Huson, D. H. Fast and sensitive protein alignment using DIAMOND. Nat. Methods 12, 59–60 (2015).
+24.	Bağcı, C., Beier, S., Górska, A. & Huson, D. H. Introduction to the Analysis of Environmental Sequences: Metagenomics with MEGAN. in Evolutionary Genomics: Statistical and Computational Methods (ed. Anisimova, M.) 591–604 (Springer, 2019). doi:10.1007/978-1-4939-9074-0_19.
+25.	Kawari, M. et al. Alterations of Gut Microbiome in Untreated Chronic Lymphocytic Leukemia (CLL); Future Therapeutic Potentials. Blood 134, 5455–5455 (2019).
+26.	Yamamoto, M. L. & Schiestl, R. H. Intestinal Microbiome and Lymphoma Development. Cancer J. Sudbury Mass 20, 190–194 (2014).
+
+## Appendix 
+
+![](table.png)
+
+
+
+
+
+
+
+
+
+
+
