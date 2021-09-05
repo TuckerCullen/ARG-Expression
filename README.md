@@ -5,3 +5,5 @@ This was my final project for Biomedical Data Science class, an elective I took 
 
 Much of the data processing was done on UVA's high performance cluster, and as such the pipeline cannot be run from the beggining by cloning this repo. Instead, the repo contains preprocessed data that was exported after running the first part of the pipeline. R is used to run statistical tests and plot this data for the final report. 
 
+The final output of the project can be found in `FinalReport.html`
+
